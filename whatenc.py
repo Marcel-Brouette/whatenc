@@ -13,7 +13,7 @@ from datetime import datetime
 
 
 #### TODO : 
-# java/php/python/ruby/asp serialize object
+# python/ruby/asp serialize object
 # BSON
 
 TYPE_INT = "INT"
@@ -76,13 +76,13 @@ def isDelimitedString(string):
 def isNumeric(string):
     try:
         return float(string)
-    except Exception as e:
+    except:
         return False
 
 def isInt(string):
     try:
         return int(string)
-    except Exception as e:
+    except:
         return False
 
 def primitiveType(data): 
@@ -98,28 +98,28 @@ def primitiveType(data):
 ###########################################
 ########## FINAL TYPE
 
-def isHtml(string): 
-    '''
-        only call it when you make sure data is xml
-    '''
+def isHtml(data): 
+    string = bytes2Str(data)
     if "<html" in string: 
         return string
     else : 
         return False
 
 
-def isXml(string): 
+def isXml(data): 
+    string = bytes2Str(data)
     try:
-        xml = ET.fromstring(string)
+        ET.fromstring(string)
         return string
-    except Exception as e:
+    except:
         return False
 
-def isJson(string): 
+def isJson(data): 
+    string = bytes2Str(data)
     try:
-        xml = json.loads(string)
+        json.loads(string)
         return string
-    except Exception as e:
+    except:
         return False
 
 def isTimestamp(numeric): 
@@ -129,7 +129,7 @@ def isTimestamp(numeric):
             return str(date)
         else : 
             return False
-    except Exception as e:
+    except:
         return False
 
 
@@ -139,6 +139,30 @@ FTYPE_CUSTOM_FUNC = {
     FTYPE_HTML     : isHtml, 
     FTYPE_TIME     : isTimestamp, 
 }
+
+def tryDecodeType(ptype, value): 
+    final_ptype = ptype
+    end_loop = False
+    while final_ptype in FINAL_TYPE.keys() and not end_loop: 
+        ptype = final_ptype
+        for candidate_type in FINAL_TYPE[final_ptype]:
+             if FTYPE_CUSTOM_FUNC[candidate_type](value): 
+                final_ptype = candidate_type
+                break # we assume it can be only one type right now
+        end_loop = final_ptype == ptype
+    return final_ptype
+
+def fingerPrintType(ptype, value): 
+    return fingerprint.match(ptype, str2bytes(value))
+
+def finalType(ptype, value): 
+    # Check for fingerprint : 
+    final_type = fingerPrintType(ptype, value)
+    if not final_type: 
+        final_type = tryDecodeType(ptype, value)
+
+    return final_type
+
 
 ###########################################
 ########## TRANSFORMATION
@@ -150,7 +174,7 @@ def gunzip(data):
     try:
         data_bytes = str2bytes(data)
         return gzip.decompress(data_bytes)
-    except Exception as e:
+    except:
         return False
     
 
@@ -178,7 +202,7 @@ def try_decode(data, list_enc, last_transforms):
                 dec_data = codecs.decode(data_bytes, enc)
             except TypeError as e: 
                 dec_data = codecs.decode(data_str, enc)
-            except Exception as e :
+            except :
                 is_dec = False
         else: 
             is_dec = False
@@ -198,17 +222,21 @@ def transform(data):
         loop_result = {}
         for transformation, value in last_result.items():
             ptype = primitiveType(value)
+            ftype = finalType(ptype, value)
             #print(f'#### {transformation}')
-            if ptype in [TYPE_INT, TYPE_FLOAT]:#, TYPE_UTF8]: 
-                final_result[transformation] = (value,ptype)
-            this_result = try_decode(value, TRANSFORMATIONS[ptype], transformation)
-            if not this_result : 
-                # rot_13 is not relevent for last transformation
-                if transformation.endswith("rot_13") : 
-                    transformation = "|".join(transformation.split("|")[:-1]) # drop last rot_13
-                    value = codecs.decode(value, "rot_13")
-                final_result[transformation] = (value,ptype)
-            loop_result.update(this_result)
+            is_final_data = ftype not in [TYPE_INT, TYPE_FLOAT, TYPE_UTF8, TYPE_BIN]
+            is_numeric    = ftype in [TYPE_INT, TYPE_FLOAT]
+            if is_final_data or is_numeric :
+                final_result[transformation] = (value,ftype)
+            if not is_final_data:
+                this_result = try_decode(value, TRANSFORMATIONS[ptype], transformation)
+                if not this_result : 
+                    # rot_13 is not relevent for last transformation
+                    if transformation.endswith("rot_13") : 
+                        transformation = "|".join(transformation.split("|")[:-1]) # drop last rot_13
+                        value = codecs.decode(value, "rot_13")
+                    final_result[transformation] = (value,ptype)
+                loop_result.update(this_result)
 
     return final_result
 
@@ -223,30 +251,6 @@ def pipe2fnStr(transformation, dtype):
 
 ###########################################
 ########## DETECTION
-
-def tryDecodeType(ptype, value): 
-    final_ptype = ptype
-    end_loop = False
-    while final_ptype in FINAL_TYPE.keys() and not end_loop: 
-        ptype = final_ptype
-        for candidate_type in FINAL_TYPE[final_ptype]:
-             if FTYPE_CUSTOM_FUNC[candidate_type](value): 
-                final_ptype = candidate_type
-                break # we assume it can be only one type right now
-        end_loop = final_ptype == ptype
-    return final_ptype
-
-def fingerPrintType(ptype, value): 
-    return fingerprint.match(ptype, str2bytes(value))
-
-def finalType(ptype, value): 
-    # Check for fingerprint : 
-    final_type = fingerPrintType(ptype, value)
-    if not final_type: 
-        final_type = tryDecodeType(ptype, value)
-
-    return final_type
-
 
 def filter_data(data, transform_result): 
     #print(transform_result)
@@ -267,22 +271,18 @@ def magic(data):
     transformations = transform(data)
     results = filter_data(data, transformations)
     return results
-    for transformation, dtype, value in results: 
-        print(pipe2fnStr(transformation, dtype, value))
 
 ######################################################
 ################# MAIN ROUTINE 
 ######################################################
 
-def print_decoded_values(): 
-    sys.stderr.write(f"[*] {len(words)} base words\n")
 
 def display_result(data): 
     print()
     #print(f"--- DATA : {data}")
     magic(data)
 
-def isStdinData(): 
+def isStdinData():
     return select.select([sys.stdin,],[],[],0.0)[0]; 
 
 def main(): 
