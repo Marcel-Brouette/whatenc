@@ -25,6 +25,7 @@ FTYPE_JSON = "JSON"
 FTYPE_XML = "XML"
 FTYPE_HTML = "HTML"
 FTYPE_TIME = "TIMESTAMP"
+FTYPE_BSONID = "BSON/MongoDB ID"
 
 TRANSFORMATIONS = {
     TYPE_INT   : ["hex_codec"],
@@ -36,7 +37,7 @@ TRANSFORMATIONS = {
 FINAL_TYPE = {
     TYPE_INT   : [FTYPE_TIME],
     TYPE_FLOAT : [FTYPE_TIME],
-    TYPE_UTF8  : [FTYPE_JSON, FTYPE_XML],
+    TYPE_UTF8  : [FTYPE_JSON, FTYPE_XML, FTYPE_BSONID],
     TYPE_BIN   : [],
     FTYPE_XML  : [FTYPE_HTML]
 }
@@ -85,6 +86,13 @@ def isInt(string):
     except:
         return False
 
+def isHexa(string):
+    for x in string:
+        if x.lower() not in 'abcdef0123456789':
+            return False
+    return True
+
+
 def primitiveType(data): 
     data_str = bytes2Str(data)
     if not data_str : 
@@ -132,12 +140,18 @@ def isTimestamp(numeric):
     except:
         return False
 
+def isBSONID(data):
+    string = bytes2Str(data)
+    return isHexa(string) and len(string) == 24 and isinstance(isTimestamp(int(string[:8], 16)), str)
+
+
 
 FTYPE_CUSTOM_FUNC = {
     FTYPE_JSON     : isJson,
     FTYPE_XML      : isXml,
     FTYPE_HTML     : isHtml, 
     FTYPE_TIME     : isTimestamp, 
+    FTYPE_BSONID   : isBSONID, 
 }
 
 def tryDecodeType(ptype, value): 
@@ -200,7 +214,7 @@ def try_decode(data, list_enc, last_transforms):
         elif enc in list_codec and (enc != last_enc or enc not in rev_enc) :
             try : 
                 dec_data = codecs.decode(data_bytes, enc)
-            except TypeError as e: 
+            except TypeError: 
                 dec_data = codecs.decode(data_str, enc)
             except :
                 is_dec = False
@@ -276,14 +290,8 @@ def magic(data):
 ################# MAIN ROUTINE 
 ######################################################
 
-
-def display_result(data): 
-    print()
-    #print(f"--- DATA : {data}")
-    magic(data)
-
 def isStdinData():
-    return select.select([sys.stdin,],[],[],0.0)[0]; 
+    return select.select([sys.stdin,],[],[],0.0)[0];
 
 def main(): 
 
